@@ -376,7 +376,7 @@ static void owr_transport_agent_init(OwrTransportAgent *transport_agent)
     g_free(pipeline_name);
 
 #ifdef OWR_DEBUG
-    g_signal_connect(priv->pipeline, "deep-notify", G_CALLBACK(gst_object_default_deep_notify), NULL);
+    g_signal_connect(priv->pipeline, "deep-notify", G_CALLBACK(_owr_deep_notify), NULL);
 #endif
 
     bus = gst_pipeline_get_bus(GST_PIPELINE(priv->pipeline));
@@ -729,8 +729,8 @@ static void maybe_handle_new_send_source_with_payload(OwrTransportAgent *transpo
     g_return_if_fail(OWR_IS_TRANSPORT_AGENT(transport_agent));
     g_return_if_fail(OWR_IS_MEDIA_SESSION(media_session));
 
-    if ((payload = _owr_media_session_get_send_payload(media_session)) &&
-        (media_source = _owr_media_session_get_send_source(media_session))) {
+    if ((payload = _owr_media_session_get_send_payload(media_session))
+        && (media_source = _owr_media_session_get_send_source(media_session))) {
         handle_new_send_payload(transport_agent, media_session, payload);
         handle_new_send_source(transport_agent, media_session, media_source, payload);
     }
@@ -759,11 +759,10 @@ static void remove_existing_send_source_and_payload(OwrTransportAgent *transport
     /* Unlink the source bin */
     g_object_get(media_source, "media-type", &media_type, NULL);
     g_warn_if_fail(media_type != OWR_MEDIA_TYPE_UNKNOWN);
-    if (media_type == OWR_MEDIA_TYPE_VIDEO) {
+    if (media_type == OWR_MEDIA_TYPE_VIDEO)
         pad_name = g_strdup_printf("video_sink_%u_%u", OWR_CODEC_TYPE_NONE, stream_id);
-    } else {
+    else
         pad_name = g_strdup_printf("audio_raw_sink_%u", stream_id);
-    }
     sinkpad = gst_element_get_static_pad(transport_agent->priv->transport_bin, pad_name);
     g_assert(sinkpad);
     g_free(pad_name);
@@ -824,9 +823,8 @@ static void on_new_send_source(OwrTransportAgent *transport_agent,
 
     g_assert(!old_media_source || OWR_IS_MEDIA_SOURCE(old_media_source));
 
-    if (old_media_source && old_media_source != new_media_source) {
+    if (old_media_source && old_media_source != new_media_source)
         remove_existing_send_source_and_payload(transport_agent, old_media_source, media_session);
-    }
 
     if (new_media_source && old_media_source != new_media_source)
         maybe_handle_new_send_source_with_payload(transport_agent, media_session);
@@ -948,13 +946,13 @@ static GstElement *add_nice_element(OwrTransportAgent *transport_agent, guint st
     nice_element = gst_element_factory_make(is_sink ? "nicesink" : "nicesrc", element_name);
     g_free(element_name);
 
-    g_object_set(nice_element, "agent", transport_agent->priv->nice_agent, NULL);
-    g_object_set(nice_element, "stream", stream_id, NULL);
-    g_object_set(nice_element, "component", is_rtcp
+    g_object_set(nice_element, "agent", transport_agent->priv->nice_agent,
+        "stream", stream_id,
+        "component", is_rtcp
         ? NICE_COMPONENT_TYPE_RTCP : NICE_COMPONENT_TYPE_RTP, NULL);
 
     if (is_sink)
-        g_object_set(nice_element, "sync", FALSE, "async", FALSE, NULL);
+        g_object_set(nice_element, "sync", FALSE, "async", FALSE, "enable-last-sample", FALSE, NULL);
 
     added_ok = gst_bin_add(GST_BIN(bin), nice_element);
     g_warn_if_fail(added_ok);
@@ -1038,7 +1036,7 @@ static GstElement *add_dtls_srtp_bin(OwrTransportAgent *transport_agent, guint s
     element_name = g_strdup_printf("dtls_srtp_%s_%s_%u", is_rtcp ? "rtcp" : "rtp",
         is_encoder ? "encoder" : "decoder", stream_id);
 
-    dtls_srtp_bin = gst_element_factory_make(is_encoder ? "erdtlssrtpenc" : "erdtlssrtpdec",
+    dtls_srtp_bin = gst_element_factory_make(is_encoder ? "dtlssrtpenc" : "dtlssrtpdec",
         element_name);
     connection_id = g_strdup_printf("%s_%u_%u", is_rtcp ? "rtcp" : "rtp",
         priv->agent_id, stream_id);
@@ -1697,9 +1695,9 @@ static void handle_new_send_payload(OwrTransportAgent *transport_agent, OwrMedia
         if (parser) {
             gst_bin_add(GST_BIN(send_input_bin), parser);
             link_ok &= gst_element_link_many(queue, encoder, parser, encoder_capsfilter, payloader, NULL);
-        } else {
+        } else
             link_ok &= gst_element_link_many(queue, encoder, encoder_capsfilter, payloader, NULL);
-        }
+
         link_ok &= gst_element_link_many(payloader, rtp_capsfilter, NULL);
 
         g_warn_if_fail(link_ok);
@@ -1727,10 +1725,10 @@ static void handle_new_send_payload(OwrTransportAgent *transport_agent, OwrMedia
         if (parser) {
             gst_bin_add(GST_BIN(send_input_bin), parser);
             link_ok &= gst_element_link_many(encoder, parser, payloader, NULL);
-        } else {
+        } else
             link_ok &= gst_element_link_many(encoder, payloader, NULL);
-        }
-        link_ok &= gst_element_link_many (payloader, rtp_capsfilter, NULL);
+
+        link_ok &= gst_element_link_many(payloader, rtp_capsfilter, NULL);
         g_warn_if_fail(link_ok);
 
         sync_ok &= gst_element_sync_state_with_parent(rtp_capsfilter);
@@ -1907,8 +1905,8 @@ static void on_rtpbin_pad_added(GstElement *rtpbin, GstPad *new_pad, OwrTranspor
         else
             setup_audio_receive_elements(new_pad, session_id, payload, transport_agent);
 
-	/* Hook up RTCP sending if it isn't already */
-	link_rtpbin_to_send_output_bin(transport_agent, session_id, FALSE, TRUE);
+        /* Hook up RTCP sending if it isn't already */
+        link_rtpbin_to_send_output_bin(transport_agent, session_id, FALSE, TRUE);
 
         g_object_unref(media_session);
         g_object_unref(payload);
@@ -1957,9 +1955,8 @@ static void setup_video_receive_elements(GstPad *new_pad, guint32 session_id, Ow
     if (parser) {
         gst_bin_add(GST_BIN(receive_output_bin), parser);
         link_ok &= gst_element_link_many(rtpdepay, parser, videorepair1, decoder, NULL);
-    } else {
+    } else
         link_ok &= gst_element_link_many(rtpdepay, videorepair1, decoder, NULL);
-    }
 
     ghost_pad = ghost_pad_and_add_to_bin(depay_sink_pad, receive_output_bin, "sink");
     link_res = gst_pad_link(new_pad, ghost_pad);
@@ -2021,9 +2018,9 @@ static void setup_audio_receive_elements(GstPad *new_pad, guint32 session_id, Ow
     if (parser) {
         gst_bin_add(GST_BIN(receive_output_bin), parser);
         link_ok &= gst_element_link_many(rtpdepay, parser, decoder, NULL);
-    } else {
+    } else
         link_ok &= gst_element_link_many(rtpdepay, decoder, NULL);
-    }
+
     g_warn_if_fail(link_ok);
 
     rtp_caps_sink_pad = gst_element_get_static_pad(rtp_capsfilter, "sink");
@@ -2126,7 +2123,7 @@ static GstElement * on_rtpbin_request_aux_sender(G_GNUC_UNUSED GstElement *rtpbi
         goto no_retransmission;
 
     rtxsend = gst_element_factory_make("rtprtxsend", NULL);
-    g_return_val_if_fail(rtxsend != NULL, NULL);
+    g_return_val_if_fail(rtxsend, NULL);
 
     /* Create and set the pt map */
     g_object_get(payload, "payload-type", &pt, NULL);
@@ -2165,7 +2162,7 @@ static GstElement * on_rtpbin_request_aux_receiver(G_GNUC_UNUSED GstElement *rtp
         goto no_retransmission;
 
     rtxrecv = gst_element_factory_make("rtprtxreceive", NULL);
-    g_return_val_if_fail(rtxrecv != NULL, NULL);
+    g_return_val_if_fail(rtxrecv, NULL);
 
     g_object_set(rtxrecv, "payload-type-map", pt_map, NULL);
     gst_structure_free(pt_map);
@@ -2311,6 +2308,10 @@ static void on_new_jitterbuffer(G_GNUC_UNUSED GstElement *rtpbin, GstElement *ji
 
     if (_owr_media_session_want_receive_rtx(media_session))
         g_object_set(jitterbuffer, "do-retransmission", TRUE, NULL);
+
+    g_object_bind_property(media_session, "jitter-buffer-latency", jitterbuffer,
+        "latency", G_BINDING_SYNC_CREATE);
+
     g_object_unref(media_session);
 }
 
@@ -2465,9 +2466,9 @@ static void sctpdec_pad_added(GstElement *sctpdec, GstPad *sctpdec_srcpad,
     g_free(name);
 
     g_object_set(G_OBJECT(data_sink), "emit-signals", FALSE, "drop", FALSE, "sync", FALSE, "async",
-        FALSE, NULL);
+        FALSE, "enable-last-sample", FALSE, NULL);
 
-    g_assert(data_channel_info->data_sink == NULL);
+    g_assert(!data_channel_info->data_sink);
 
     callbacks.eos = NULL;
     callbacks.new_preroll = NULL;
@@ -2518,9 +2519,9 @@ static void sctpdec_pad_removed(GstElement *sctpdec, GstPad *sctpdec_srcpad,
     g_rw_lock_writer_lock(&priv->data_channels_rw_mutex);
     data_channel_info = g_hash_table_lookup(priv->data_channels, GUINT_TO_POINTER(id));
     g_assert(data_channel_info);
-    if (data_channel_info->state == OWR_DATA_CHANNEL_STATE_CLOSING) {
+    if (data_channel_info->state == OWR_DATA_CHANNEL_STATE_CLOSING)
         already_closing = TRUE;
-    } else {
+    else {
         data_channel_info->state = OWR_DATA_CHANNEL_STATE_CLOSING;
         data_session = OWR_DATA_SESSION(
             get_session(transport_agent, data_channel_info->session_id));
@@ -2596,9 +2597,8 @@ static void on_sctp_association_established(GstElement *sctpenc, gboolean establ
         }
 
         g_list_free(data_channels);
-    } else {
+    } else
         g_log(G_LOG_DOMAIN, G_LOG_LEVEL_INFO, "An SCTP association has been terminated");
-    }
 }
 
 static GstFlowReturn new_data_callback(GstAppSink *appsink, OwrTransportAgent *transport_agent)
@@ -2723,7 +2723,7 @@ static gboolean create_datachannel_appsrc(OwrTransportAgent *transport_agent,
     data_src = gst_element_factory_make("appsrc", name);
     g_free(name);
     g_assert(data_src);
-    g_object_set(data_src, "caps", caps, "is-live", TRUE, "min-latency", 0,
+    g_object_set(data_src, "caps", caps, "is-live", TRUE, "min-latency", G_GINT64_CONSTANT(0),
         "do-timestamp", TRUE, NULL);
 
     data_channel_info->data_src = data_src;
@@ -2759,7 +2759,7 @@ static gboolean is_valid_sctp_stream_id(OwrTransportAgent *transport_agent, guin
     session = get_session(transport_agent, session_id);
     g_return_val_if_fail(session, FALSE);
     g_object_get(session, "dtls-client-mode", &is_client, NULL);
-    if ((sctp_stream_id == 65535) || ((sctp_stream_id % 2 == 0) && !is_client)
+    if ((sctp_stream_id == 65535) || (!(sctp_stream_id % 2) && !is_client)
         || ((sctp_stream_id % 2 == 1) && is_client)) {
         result = FALSE;
     }
@@ -2802,7 +2802,7 @@ static void handle_data_channel_control_message(OwrTransportAgent *transport_age
 {
     OwrDataChannelMessageType message_type;
 
-    if (size == 0) {
+    if (!size) {
         g_warning("Invalid size of data channel control message: %u, expected > 0", size);
         return;
     }

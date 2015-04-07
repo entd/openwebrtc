@@ -71,9 +71,10 @@ class Log(C.Lines):
     warning = _make_logfunc('warning')
     debug = _make_logfunc('debug')
     info = _make_logfunc('info')
+    verbose = _make_logfunc('verbose')
 
     def __iter__(self):
-        yield 'log_%s("%s"%s);' % (self.level, self.msg, (', ' if self.args else '') + flatjoin(self.args, ', '))
+        yield C.Call('log_' + self.level, quot(self.msg), *self.args)
 
 
 @add_to(C)
@@ -102,6 +103,7 @@ class ExceptionCheck(C.Lines):
     def __iter__(self):
         yield C.If(C.Env('ExceptionCheck'),
             C.Log('warning', 'exception at %s:%d', '__FILE__', '__LINE__'),
+            C.Env('ExceptionDescribe'),
             C.Return(self.value),
         )
 
@@ -671,6 +673,20 @@ HEADER = """
 
 GET_JNI_ENV = [
     C.Decl('static JavaVM*', 'jvm'),
+    C.Decl('static pthread_key_t', 'pthread_detach_key = 0'),
+    '',
+    C.Function('detach_current_thread',
+        params=['void* pthread_key'],
+        body=[
+            C.Decl('(void)', 'pthread_key'),
+            C.Call('g_return_if_fail', 'jvm'),
+            '',
+            C.Log.debug('JNI: detaching current thread from Java VM: %ld', C.Call('pthread_self')),
+            '',
+            C.Call('(*jvm)->DetachCurrentThread', 'jvm'),
+            C.Call('pthread_setspecific', 'pthread_detach_key', 'NULL'),
+        ]
+    ),
     '',
     C.Function('get_jni_env',
         return_type='JNIEnv*',
@@ -686,8 +702,12 @@ GET_JNI_ENV = [
                 bodies=[
                     C.IfElse(ifs=['(*jvm)->AttachCurrentThread(jvm, (JNIEnv**) &env, NULL) != 0'],
                         bodies=[
-                            C.Log.error('JNI: failed to attach thread'),
-                            C.Log.info('JNI: successfully attached to thread'),
+                            C.Log.error('JNI: failed to attach thread'), [
+                                C.Log.info('JNI: successfully attached to thread'),
+                                C.If(C.Call('pthread_key_create', '&pthread_detach_key', 'detach_current_thread'),
+                                    C.Log.error('JNI: failed to set detach callback')),
+                                C.Call('pthread_setspecific', 'pthread_detach_key', 'jvm'),
+                            ]
                         ]),
                     C.Log.error('JNI: version not supported'),
                 ]

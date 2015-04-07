@@ -55,8 +55,9 @@
 
 #elif defined(__linux__)
 #include <fcntl.h>
-#include <libv4l2.h>
 #include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #endif /* defined(__linux__) */
 
@@ -299,7 +300,7 @@ static gchar *get_v4l2_device_name(gchar *filename)
         return NULL;
     }
 
-    if (v4l2_ioctl(fd, VIDIOC_QUERYCAP, &vcap) < 0) {
+    if (ioctl(fd, VIDIOC_QUERYCAP, &vcap) < 0) {
         g_warning("v4l: failed to query %s", filename);
 
         device_name = g_strdup(filename);
@@ -462,7 +463,7 @@ static JNIEnv* get_jni_env_from_jvm(JavaVM *jvm)
         if (pthread_key_create(&detach_key, (void (*)(void *)) on_java_detach))
             g_warning("android device list: failed to set on_java_detach");
 
-        pthread_setspecific(detach_key, env);
+        pthread_setspecific(detach_key, jvm);
     } else if (JNI_OK != err)
         g_warning("jvm->GetEnv() failed");
 
@@ -492,7 +493,7 @@ static JavaVM *get_java_vm(void)
     gpointer handle = NULL;
     static JavaVM *jvm = NULL;
     const gchar *error_string;
-    jsize num_jvms = NULL;
+    jsize num_jvms = 0;
     gint lib_index = 0;
     gint err;
 
@@ -630,7 +631,7 @@ static jint get_camera_facing(gint camera_index)
     JNIEnv *env;
 
     env = get_jni_env();
-    g_return_val_if_fail(env, NULL);
+    g_return_val_if_fail(env, 0);
 
     camera_info_instance = (*env)->NewObject(env, CameraInfo.class, CameraInfo.constructor);
     if ((*env)->ExceptionCheck(env)) {

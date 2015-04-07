@@ -42,10 +42,10 @@ C.Helper.add_helper('jobject_wrapper_create',
             C.IfElse(ifs=['weak'],
                 bodies=[[
                     C.Assign('wrapper->weak', C.Env('NewWeakGlobalRef', 'jobj')),
-                    C.Log.info('created weak global ref: %p', 'wrapper->weak'),
+                    C.Log.verbose('created weak global ref: %p', 'wrapper->weak'),
                 ],[
                     C.Assign('wrapper->obj', C.Env('NewGlobalRef', 'jobj')),
-                    C.Log.info('created global ref: %p', 'wrapper->obj'),
+                    C.Log.verbose('created global ref: %p', 'wrapper->obj'),
                 ]]
             ),
             C.ExceptionCheck('NULL'),
@@ -69,10 +69,10 @@ C.Helper.add_helper('jobject_wrapper_destroy',
             '',
             C.IfElse(ifs=['weak'],
                 bodies=[[
-                    C.Log.info('finalizing weak global ref: %p', 'wrapper->weak'),
+                    C.Log.verbose('finalizing weak global ref: %p', 'wrapper->weak'),
                     C.Env('DeleteWeakGlobalRef', 'wrapper->weak'),
                 ],[
-                    C.Log.info('finalizing global ref: %p', 'wrapper->obj'),
+                    C.Log.verbose('finalizing global ref: %p', 'wrapper->obj'),
                     C.Env('DeleteGlobalRef', 'wrapper->obj'),
                 ]]
             ),
@@ -103,14 +103,14 @@ C.Helper.add_helper('gobject_to_jobject',
             C.Decl('JObjectWrapper*', 'wrapper'),
             '',
             C.If('!data_pointer',
-                C.Log.debug('got jobject[NULL] from GObject[null]'),
+                C.Log.verbose('got jobject[NULL] from GObject[null]'),
                 C.Return('NULL')),
             C.Assign('gobj', C.Call('G_OBJECT', 'data_pointer')),
             '',
             C.Assign('wrapper', C.Call('g_object_get_data', 'gobj', '"java_instance"'), cast='JObjectWrapper*'),
             C.IfElse(ifs=['wrapper'],
                 bodies=[[
-                    C.Log.debug('got jobject[%p] from gobject[%p]', 'wrapper->obj', 'gobj'),
+                    C.Log.verbose('got jobject[%p] from gobject[%p]', 'wrapper->obj', 'gobj'),
                     C.Return('wrapper->obj'),
                 ], [
                     C.Decl('jobject', 'jobj'),
@@ -132,7 +132,7 @@ C.Helper.add_helper('gobject_to_jobject',
                     C.Assert('wrapper'),
                     C.Call('g_object_set_data', 'gobj', '"java_instance"', 'wrapper'),
                     '',
-                    C.Log.debug('got jobject[%p] from GObject[%p]', 'jobj', 'gobj'),
+                    C.Log.verbose('got jobject[%p] from GObject[%p]', 'jobj', 'gobj'),
                     C.Return('jobj'),
                 ]]),
         ]
@@ -148,14 +148,14 @@ C.Helper.add_helper('jobject_to_gobject',
             C.Decl('gpointer', 'gobj'),
             '',
             C.If('!jobj',
-                C.Log.debug('got GObject[NULL] from jobject[null]'),
+                C.Log.verbose('got GObject[NULL] from jobject[null]'),
                 C.Return('NULL')),
             '',
             C.Assign('ref', C.Env.field('jobj', ('NativeInstance', 'nativeInstance')), cast='GWeakRef*'),
             C.Assign('gobj', C.Call('g_weak_ref_get', 'ref')),
             C.If('!gobj',
                 C.Env.throw('IllegalStateException', '"GObject ref was NULL at translation"')),
-            C.Log.debug('got gobject[%p] from jobject[%p]', 'gobj', 'jobj'),
+            C.Log.verbose('got gobject[%p] from jobject[%p]', 'gobj', 'jobj'),
             C.Return('gobj'),
         ]
     )
@@ -189,7 +189,11 @@ C.Helper.add_helper('gvalue_to_jobject',
             ] + [('G_TYPE_STRING',[
                 C.Decl('const gchar*', 'str'),
                 C.Assign('str', C.Call('g_value_get_string', 'value')),
-                C.Assign('obj', C.Env('NewStringUTF', 'str')),
+                C.IfElse(ifs=['str'], bodies=[[
+                    C.Assign('obj', C.Env('NewStringUTF', 'str')),
+                ],[
+                    C.Assign('obj', 'NULL'),
+                ]]),
             ])],
             default=[
                 C.Assign('obj', 'NULL'),
@@ -525,20 +529,28 @@ class StringMetaType(ObjectMetaType):
                 C.Decl(self.c_type, self.c_name),
                 C.Decl(self.c_type, tmp),
             ],[
-                C.Assign(tmp, Env('GetStringUTFChars', self.jni_name, 'NULL'), cast=self.c_type),
-                C.ExceptionCheck.default(self),
-                C.Assign(self.c_name, Call('g_strdup', tmp)),
+                C.IfElse(ifs=[self.jni_name], bodies=[[
+                    C.Assign(tmp, C.Env('GetStringUTFChars', self.jni_name, 'NULL'), cast=self.c_type),
+                    C.ExceptionCheck.default(self),
+                    C.Assign(self.c_name, C.Call('g_strdup', tmp)),
+                ],[
+                    C.Assign(self.c_name, 'NULL'),
+                ]])
             ],[
-                C.Env('ReleaseStringUTFChars', self.jni_name, tmp),
+                C.If(self.jni_name, C.Env('ReleaseStringUTFChars', self.jni_name, tmp)),
             ])
         else:
             return TypeTransform([
                 C.Decl(self.c_type, self.c_name),
             ],[
-                C.Assign(self.c_name, C.Env('GetStringUTFChars', self.jni_name, 'NULL'), cast=self.c_type),
-                C.ExceptionCheck.default(self),
+            C.IfElse(ifs=[self.jni_name], bodies=[[
+                    C.Assign(self.c_name, C.Env('GetStringUTFChars', self.jni_name, 'NULL'), cast=self.c_type),
+                    C.ExceptionCheck.default(self),
+                ],[
+                    C.Assign(self.c_name, 'NULL'),
+                ]]),
             ],[
-                C.Env('ReleaseStringUTFChars', self.jni_name, self.c_name),
+                C.If(self.jni_name, C.Env('ReleaseStringUTFChars', self.jni_name, self.c_name)),
             ])
 
 
@@ -546,7 +558,10 @@ class StringMetaType(ObjectMetaType):
         return TypeTransform([
             C.Decl(self.jni_type, self.jni_name),
         ],[
-            C.Assign(self.jni_name, C.Env('NewStringUTF', self.c_name))
+            C.IfElse(ifs=[self.c_name], bodies=[
+                C.Assign(self.jni_name, C.Env('NewStringUTF', self.c_name)),
+                C.Assign(self.jni_name, 'NULL'),
+            ]),
         ], self.transfer_ownership and [
             C.Call('g_free', self.c_name),
         ])

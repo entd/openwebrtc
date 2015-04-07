@@ -420,7 +420,7 @@ static GstElement *owr_local_media_source_request_source(OwrMediaSource *media_s
         bin_name = NULL;
 
 #ifdef OWR_DEBUG
-        g_signal_connect(source_pipeline, "deep-notify", G_CALLBACK(gst_object_default_deep_notify), NULL);
+        g_signal_connect(source_pipeline, "deep-notify", G_CALLBACK(_owr_deep_notify), NULL);
 #endif
 
         bus = gst_pipeline_get_bus(GST_PIPELINE(source_pipeline));
@@ -444,8 +444,16 @@ static GstElement *owr_local_media_source_request_source(OwrMediaSource *media_s
             case OWR_SOURCE_TYPE_CAPTURE:
                 CREATE_ELEMENT(source, AUDIO_SRC, "audio-source");
 #if !defined(__APPLE__) || !TARGET_IPHONE_SIMULATOR
+/*
+    Default values for buffer-time and latency-time on android are 200ms and 20ms.
+    The minimum latency-time that can be used on Android is 20ms, and using
+    a 40ms buffer-time with a 20ms latency-time causes crackling audio.
+    So let's just stick with the defaults.
+*/
+#if !defined(__ANDROID__)
                 g_object_set(source, "buffer-time", G_GINT64_CONSTANT(40000),
                     "latency-time", G_GINT64_CONSTANT(10000), NULL);
+#endif
                 if (priv->device_index > -1) {
 #ifdef __APPLE__
                     g_object_set(source, "device", priv->device_index, NULL);
@@ -576,7 +584,7 @@ static GstElement *owr_local_media_source_request_source(OwrMediaSource *media_s
         CREATE_ELEMENT(queue, "queue", "source-tee-fakesink-queue");
 
         CREATE_ELEMENT(fakesink, "fakesink", "source-tee-fakesink");
-        g_object_set(fakesink, "async", FALSE, NULL);
+        g_object_set(fakesink, "async", FALSE, "enable-last-sample", FALSE, NULL);
 
         gst_bin_add_many(GST_BIN(source_pipeline), source, tee, queue, fakesink, NULL);
 
@@ -608,9 +616,8 @@ static GstElement *owr_local_media_source_request_source(OwrMediaSource *media_s
         } else if (source_process) {
             LINK_ELEMENTS(source_process, tee);
             LINK_ELEMENTS(source, source_process);
-        } else {
+        } else
             LINK_ELEMENTS(source, tee);
-        }
 
         gst_element_sync_state_with_parent(tee);
         if (capsfilter)
